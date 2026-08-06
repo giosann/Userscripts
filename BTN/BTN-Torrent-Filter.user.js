@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BTN Torrent Filter
 // @namespace    https://broadcasthe.net/
-// @version      2.0
+// @version      2.1
 // @description  Adds a collapsible grid of checkbox filters for series, season, and episode pages based on page content.
 // @author       You
 // @match        https://broadcasthe.net/series.php*
@@ -25,6 +25,7 @@
             source: new Set(),
             container: new Set(),
             codec: new Set(),
+            hdr: new Set(),
             group: new Set()
         };
 
@@ -38,8 +39,7 @@
         // Parse Torrents
         torrentRows.forEach(row => {
             let groupCell = null;
-
-            // Map the layout relationships on series.php for dynamic rowspan updates
+            
             if (isSeriesPage) {
                 groupCell = row.querySelector('td.group');
                 if (groupCell) {
@@ -69,24 +69,54 @@
                 }
             }
 
-            let resolution = 'Unknown', source = 'Unknown', container = 'Unknown', codec = 'Unknown', group = 'Unknown';
+            let resolution = 'Unknown', source = 'Unknown', container = 'Unknown', codec = 'Unknown', hdr = 'SDR', group = 'Unknown';
 
             if (hasHighlighter) {
-                // Parse using BTN Highlighter classes
+                // Parse using BTN Highlighter classes & attributes
                 const extract = (key) => {
                     const el = row.querySelector(`.torrent-field[data-${key}]`);
-                    return el ? el.getAttribute(`data-${key}`).trim() : 'Unknown';
+                    return el ? (el.getAttribute(`data-${key}`) || el.textContent).trim() : 'Unknown';
                 };
 
                 resolution = extract('resolution');
                 source = extract('source');
                 container = extract('container');
                 codec = extract('codec');
-
+                
                 const typeEl = row.querySelector('.torrent-field[data-type]');
                 if (typeEl) {
                     group = typeEl.getAttribute('data-custom') || typeEl.textContent.trim();
                 }
+
+                // Check for Remux distinction
+                const sourceEl = row.querySelector('.torrent-field[data-source]');
+                const customSource = sourceEl ? sourceEl.getAttribute('data-custom') : null;
+                const isRemux = (customSource === 'Remux') || 
+                                row.textContent.includes('Remux') || 
+                                (sourceEl && sourceEl.textContent.includes('Remux'));
+
+                if ((source.toLowerCase().includes('bluray') || source.toLowerCase().includes('bd')) && isRemux) {
+                    source = 'Bluray Remux';
+                }
+
+                // Check for Dynamic Range
+                const hdrEl = row.querySelector('.torrent-field[data-hdr]');
+                let hdrVal = hdrEl ? hdrEl.getAttribute('data-hdr') : null;
+                if (!hdrVal) {
+                    const hasDV = row.textContent.includes('DV') || row.textContent.includes('Dolby Vision');
+                    const hasHDR = row.textContent.includes('HDR');
+                    const hasHLG = row.textContent.includes('HLG');
+                    if (hasDV && hasHDR) hdrVal = 'DV HDR';
+                    else if (hasDV) hdrVal = 'DV';
+                    else if (hasHDR) hdrVal = 'HDR';
+                    else if (hasHLG) hdrVal = 'HLG';
+                    else hdrVal = 'SDR';
+                } else {
+                    if (hdrVal.includes('DV') && hdrVal.includes('HDR')) hdrVal = 'DV HDR';
+                    else if (hdrVal.startsWith('DV')) hdrVal = 'DV';
+                }
+                hdr = hdrVal;
+
             } else {
                 // Fallback: Parse native site HTML via text extraction
                 let aNode;
@@ -97,28 +127,53 @@
                 }
 
                 if (aNode) {
-                    let htmlPart = aNode.innerHTML.split('<br>')[0];
-                    let tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = htmlPart;
-                    let text = tempDiv.textContent.replace(/[»▶]/g, '').trim();
-                    let parts = text.split('/').map(p => p.trim());
+                    let parts = aNode.innerHTML.split('<br>');
+                    let mainHtml = parts[0];
+                    let subHtml = parts[1] || '';
 
-                    if (parts.length >= 4) {
-                        container = parts[0] || 'Unknown';
-                        codec = parts[1] || 'Unknown';
-                        source = parts[2] || 'Unknown';
-                        resolution = parts[3] || 'Unknown';
-                        group = parts[4] || 'Unknown';
+                    // Main info line (Container / Codec / Source / Resolution / Group)
+                    let tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = mainHtml;
+                    let text = tempDiv.textContent.replace(/[»▶]/g, '').trim();
+                    let mainParts = text.split('/').map(p => p.trim());
+                    
+                    if (mainParts.length >= 4) {
+                        container = mainParts[0] || 'Unknown';
+                        codec = mainParts[1] || 'Unknown';
+                        source = mainParts[2] || 'Unknown';
+                        resolution = mainParts[3] || 'Unknown';
+                        group = mainParts[4] || 'Unknown';
                     }
+
+                    // Secondary info line (<abbr> tags containing Remux, DV, HDR, HLG)
+                    let tempSub = document.createElement('div');
+                    tempSub.innerHTML = subHtml;
+                    let subText = tempSub.textContent;
+
+                    const isRemux = subText.includes('Remux');
+                    if ((source.toLowerCase().includes('bluray') || source.toLowerCase().includes('bd')) && isRemux) {
+                        source = 'Bluray Remux';
+                    }
+
+                    const hasDV = /\b(DV|Dolby Vision)\b/i.test(subText);
+                    const hasHDR = /\bHDR(10)?\b/i.test(subText);
+                    const hasHLG = /\bHLG\b/i.test(subText);
+
+                    if (hasDV && hasHDR) hdr = 'DV HDR';
+                    else if (hasDV) hdr = 'DV';
+                    else if (hasHDR) hdr = 'HDR';
+                    else if (hasHLG) hdr = 'HLG';
+                    else hdr = 'SDR';
                 }
             }
 
-            item.data = { resolution, source, container, codec, group };
-
+            item.data = { resolution, source, container, codec, hdr, group };
+            
             filters.resolution.add(resolution);
             filters.source.add(source);
             filters.container.add(container);
             filters.codec.add(codec);
+            filters.hdr.add(hdr);
             filters.group.add(group);
 
             if (isSeriesPage && currentGroup) {
@@ -162,6 +217,7 @@
                 ${createCheckboxRow('container')}
                 ${createCheckboxRow('codec')}
                 ${createCheckboxRow('resolution')}
+                ${createCheckboxRow('hdr')}
                 <div style="padding-top: 8px; display: flex; flex-wrap: wrap;">
                     ${createCheckboxRow('group').replace(/<div[^>]*>|<\/div>/g, '')}
                 </div>
@@ -191,7 +247,7 @@
 
         header.addEventListener('click', (e) => {
             if (e.target.id === 'btn-toggle-all') return;
-
+            
             const isHidden = body.style.display === 'none';
             body.style.display = isHidden ? 'block' : 'none';
             headerText.innerText = isHidden ? '▼ Filter' : '▶ Filter';
@@ -214,6 +270,7 @@
                 source: new Set(),
                 container: new Set(),
                 codec: new Set(),
+                hdr: new Set(),
                 group: new Set()
             };
 
@@ -225,7 +282,7 @@
 
             torrentData.forEach(item => {
                 let isVisible = true;
-
+                
                 for (const key of Object.keys(selected)) {
                     if (filters[key].size > 0 && !selected[key].has(item.data[key])) {
                         isVisible = false;
@@ -239,20 +296,17 @@
                 parsedGroups.forEach(group => {
                     const visibleItems = group.items.filter(i => i.isVisible);
 
-                    // Apply hidden state
                     group.items.forEach(item => {
                         item.mainRow.style.display = item.isVisible ? '' : 'none';
                     });
 
                     if (visibleItems.length > 0) {
                         const firstVisibleRow = visibleItems[0].mainRow;
-
-                        // Dynamically detach the rowspan cell and move it to the highest visible row
+                        
                         if (firstVisibleRow.firstElementChild !== group.groupCell) {
                             firstVisibleRow.insertBefore(group.groupCell, firstVisibleRow.firstElementChild);
                         }
-
-                        // Recalculate cell stretch height based on remaining visible rows
+                        
                         group.groupCell.setAttribute('rowspan', visibleItems.length);
                         group.groupCell.style.display = '';
                     } else {
@@ -271,17 +325,15 @@
         checkboxes.forEach(cb => cb.addEventListener('change', applyFilters));
     }
 
-    // Execution polling checks for highlighter injection prior to triggering filter construction
     let checkCount = 0;
     const readyCheck = setInterval(() => {
         const tagsExist = document.querySelector('.torrent-field');
-        if (tagsExist) {
+        if (tagsExist) { 
             clearInterval(readyCheck);
             if (!document.getElementById('dyn-filter-header')) {
                 buildFilters(true);
             }
-        } else if (checkCount > 10) {
-            // Fallback to native HTML execution if tags remain missing after ~1.5 seconds
+        } else if (checkCount > 10) { 
             clearInterval(readyCheck);
             if (!document.getElementById('dyn-filter-header')) {
                 buildFilters(false);
