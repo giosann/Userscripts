@@ -6,6 +6,8 @@
 // @author       You
 // @match        https://broadcasthe.net/series.php*
 // @match        https://broadcasthe.net/torrents.php*
+// @downloadURL  https://github.com/giosann/Userscripts/raw/main/BTN/BTN-Torrent-Filter.user.js
+// @updateURL    https://github.com/giosann/Userscripts/raw/main/BTN/BTN-Torrent-Filter.user.js
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
