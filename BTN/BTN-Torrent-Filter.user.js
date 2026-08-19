@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BTN Torrent Filter
 // @namespace    https://broadcasthe.net/
-// @version      2.4
+// @version      2.5
 // @description  Adds a collapsible grid of checkbox filters for series, season, and episode pages based on page content.
 // @author       You
 // @match        https://broadcasthe.net/series.php*
@@ -22,11 +22,11 @@
     function buildFilters(hasHighlighter) {
         const filters = {
             resolution: new Set(),
- source: new Set(),
- container: new Set(),
- codec: new Set(),
- hdr: new Set(),
- group: new Set()
+            source: new Set(),
+            container: new Set(),
+            codec: new Set(),
+            hdr: new Set(),
+            group: new Set()
         };
 
         const torrentData = [];
@@ -39,7 +39,7 @@
         // Parse Torrents
         torrentRows.forEach(row => {
             let groupCell = null;
-
+            
             if (isSeriesPage) {
                 groupCell = row.querySelector('td.group');
                 if (groupCell) {
@@ -82,7 +82,7 @@
                 source = extract('source');
                 container = extract('container');
                 codec = extract('codec');
-
+                
                 const typeEl = row.querySelector('.torrent-field[data-type]');
                 if (typeEl) {
                     group = typeEl.getAttribute('data-custom') || typeEl.textContent.trim();
@@ -91,9 +91,9 @@
                 // Check for Remux distinction
                 const sourceEl = row.querySelector('.torrent-field[data-source]');
                 const customSource = sourceEl ? sourceEl.getAttribute('data-custom') : null;
-                const isRemux = (customSource === 'Remux') ||
-                row.textContent.includes('Remux') ||
-                (sourceEl && sourceEl.textContent.includes('Remux'));
+                const isRemux = (customSource === 'Remux') || 
+                                /\bRemux\b/i.test(row.textContent) || 
+                                (sourceEl && /\bRemux\b/i.test(sourceEl.textContent));
 
                 if ((source.toLowerCase().includes('bluray') || source.toLowerCase().includes('bd')) && isRemux) {
                     source = 'Bluray Remux';
@@ -103,9 +103,10 @@
                 const hdrEl = row.querySelector('.torrent-field[data-hdr]');
                 let hdrVal = hdrEl ? hdrEl.getAttribute('data-hdr') : null;
                 if (!hdrVal) {
-                    const hasDV = row.textContent.includes('DV') || row.textContent.includes('Dolby Vision');
-                    const hasHDR = row.textContent.includes('HDR');
-                    const hasHLG = row.textContent.includes('HLG');
+                    const hasDV = /\b(DV|Dolby Vision)\b/.test(row.textContent);
+                    const hasHDR = /\bHDR(10)?\b/i.test(row.textContent);
+                    const hasHLG = /\bHLG\b/i.test(row.textContent);
+                    
                     if (hasDV && hasHDR) hdrVal = 'DV HDR';
                     else if (hasDV) hdrVal = 'DV';
                     else if (hasHDR) hdrVal = 'HDR';
@@ -136,7 +137,7 @@
                     tempDiv.innerHTML = mainHtml;
                     let text = tempDiv.textContent.replace(/[»▶]/g, '').trim();
                     let mainParts = text.split('/').map(p => p.trim());
-
+                    
                     if (mainParts.length >= 4) {
                         container = mainParts[0] || 'Unknown';
                         codec = mainParts[1] || 'Unknown';
@@ -150,7 +151,7 @@
                     tempSub.innerHTML = subHtml;
                     let subText = tempSub.textContent;
 
-                    const isRemux = subText.includes('Remux');
+                    const isRemux = /\bRemux\b/i.test(subText);
                     if ((source.toLowerCase().includes('bluray') || source.toLowerCase().includes('bd')) && isRemux) {
                         source = 'Bluray Remux';
                     }
@@ -168,7 +169,7 @@
             }
 
             item.data = { resolution, source, container, codec, hdr, group };
-
+            
             filters.resolution.add(resolution);
             filters.source.add(source);
             filters.container.add(container);
@@ -188,39 +189,39 @@
             if (uniqueValues.length === 0) return '';
 
             const checkboxes = uniqueValues.map(val => `
-            <label style="margin-right: 15px; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; transition: opacity 0.2s ease;">
-            <input type="checkbox" class="dyn-filter-cb" data-key="${key}" value="${val}" checked>
-            ${val}
-            </label>
+                <label style="margin-right: 15px; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; transition: opacity 0.2s ease;">
+                    <input type="checkbox" class="dyn-filter-cb" data-key="${key}" value="${val}" checked>
+                    ${val}
+                </label>
             `).join('');
 
             return `
-            <div style="border-bottom: 1px solid #333; padding: 8px 0; display: flex; flex-wrap: wrap;">
-            ${checkboxes}
-            </div>
+                <div style="border-bottom: 1px solid #333; padding: 8px 0; display: flex; flex-wrap: wrap;">
+                    ${checkboxes}
+                </div>
             `;
         }
 
         const filterBox = document.createElement('div');
         filterBox.className = 'box';
-        filterBox.style.setProperty('order', '0', 'important');
+        filterBox.style.setProperty('order', '0', 'important'); 
         filterBox.innerHTML = `
-        <div class="head diffpointer" id="dyn-filter-header" style="user-select: none;">
-        <strong>▶ Filter</strong> [shrink/expand]
-        <span style="float: right;">
-        <a href="#" id="btn-toggle-all" onclick="return false;">[Toggle All]</a>
-        </span>
-        </div>
-        <div class="body" id="dyn-filter-body" style="display: none; padding: 10px;">
-        ${createCheckboxRow('source')}
-        ${createCheckboxRow('container')}
-        ${createCheckboxRow('codec')}
-        ${createCheckboxRow('resolution')}
-        ${createCheckboxRow('hdr')}
-        <div style="padding-top: 8px; display: flex; flex-wrap: wrap;">
-        ${createCheckboxRow('group').replace(/<div[^>]*>|<\/div>/g, '')}
-        </div>
-        </div>
+            <div class="head diffpointer" id="dyn-filter-header" style="user-select: none;">
+                <strong>▶ Filter</strong> [shrink/expand]
+                <span style="float: right;">
+                    <a href="#" id="btn-toggle-all" onclick="return false;">[Toggle All]</a>
+                </span>
+            </div>
+            <div class="body" id="dyn-filter-body" style="display: none; padding: 10px;">
+                ${createCheckboxRow('source')}
+                ${createCheckboxRow('container')}
+                ${createCheckboxRow('codec')}
+                ${createCheckboxRow('resolution')}
+                ${createCheckboxRow('hdr')}
+                <div style="padding-top: 8px; display: flex; flex-wrap: wrap;">
+                    ${createCheckboxRow('group').replace(/<div[^>]*>|<\/div>/g, '')}
+                </div>
+            </div>
         `;
 
         const tableElements = document.querySelectorAll('.torrent_table');
@@ -244,7 +245,7 @@
 
         header.addEventListener('click', (e) => {
             if (e.target.id === 'btn-toggle-all') return;
-
+            
             const isHidden = body.style.display === 'none';
             body.style.display = isHidden ? 'block' : 'none';
             headerText.innerText = isHidden ? '▼ Filter' : '▶ Filter';
@@ -263,11 +264,11 @@
         const applyFilters = () => {
             const selected = {
                 resolution: new Set(),
- source: new Set(),
- container: new Set(),
- codec: new Set(),
- hdr: new Set(),
- group: new Set()
+                source: new Set(),
+                container: new Set(),
+                codec: new Set(),
+                hdr: new Set(),
+                group: new Set()
             };
 
             checkboxes.forEach(cb => {
@@ -276,20 +277,18 @@
                 }
             });
 
-            // Initialize sets for options that yield >0 results
             const availableOptions = {
                 resolution: new Set(),
- source: new Set(),
- container: new Set(),
- codec: new Set(),
- hdr: new Set(),
- group: new Set()
+                source: new Set(),
+                container: new Set(),
+                codec: new Set(),
+                hdr: new Set(),
+                group: new Set()
             };
 
             const categories = Object.keys(selected);
             const totalCats = categories.length;
 
-            // Single-pass check over all torrents
             torrentData.forEach(item => {
                 const passesCat = {};
                 let totalPasses = 0;
@@ -305,7 +304,6 @@
 
                 item.isVisible = (totalPasses === totalCats);
 
-                // Populate valid combinations for the UI
                 for (const cat of categories) {
                     if (totalPasses === totalCats || (totalPasses === totalCats - 1 && !passesCat[cat])) {
                         availableOptions[cat].add(item.data[cat]);
@@ -313,13 +311,11 @@
                 }
             });
 
-            // Apply opacity
             checkboxes.forEach(cb => {
                 const isRelevant = availableOptions[cb.dataset.key].has(cb.value);
                 cb.parentElement.style.opacity = isRelevant ? '1' : '0.35';
             });
 
-            // Layout execution
             if (isSeriesPage && targetTable) {
                 parsedGroups.forEach(group => {
                     const visibleItems = group.items.filter(i => i.isVisible);
@@ -330,11 +326,11 @@
 
                     if (visibleItems.length > 0) {
                         const firstVisibleRow = visibleItems[0].mainRow;
-
+                        
                         if (firstVisibleRow.firstElementChild !== group.groupCell) {
                             firstVisibleRow.insertBefore(group.groupCell, firstVisibleRow.firstElementChild);
                         }
-
+                        
                         group.groupCell.setAttribute('rowspan', visibleItems.length);
                         group.groupCell.style.display = '';
                     } else {
@@ -351,18 +347,18 @@
         };
 
         checkboxes.forEach(cb => cb.addEventListener('change', applyFilters));
-        applyFilters();
+        applyFilters(); 
     }
 
     let checkCount = 0;
     const readyCheck = setInterval(() => {
         const tagsExist = document.querySelector('.torrent-field');
-        if (tagsExist) {
+        if (tagsExist) { 
             clearInterval(readyCheck);
             if (!document.getElementById('dyn-filter-header')) {
                 buildFilters(true);
             }
-        } else if (checkCount > 10) {
+        } else if (checkCount > 10) { 
             clearInterval(readyCheck);
             if (!document.getElementById('dyn-filter-header')) {
                 buildFilters(false);
