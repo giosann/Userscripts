@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BTN Torrent Filter
 // @namespace    https://broadcasthe.net/
-// @version      2.5
+// @version      2.7
 // @description  Adds a collapsible grid of checkbox filters for series, season, and episode pages based on page content.
 // @author       You
 // @match        https://broadcasthe.net/series.php*
@@ -99,11 +99,11 @@
                     source = 'Bluray Remux';
                 }
 
-                // Check for Dynamic Range
+                // Strict Boundary Check for Dynamic Range
                 const hdrEl = row.querySelector('.torrent-field[data-hdr]');
                 let hdrVal = hdrEl ? hdrEl.getAttribute('data-hdr') : null;
                 if (!hdrVal) {
-                    const hasDV = /\b(DV|Dolby Vision)\b/.test(row.textContent);
+                    const hasDV = /\b(DV|Dolby Vision)\b/i.test(row.textContent);
                     const hasHDR = /\bHDR(10)?\b/i.test(row.textContent);
                     const hasHLG = /\bHLG\b/i.test(row.textContent);
                     
@@ -128,7 +128,7 @@
                 }
 
                 if (aNode) {
-                    let parts = aNode.innerHTML.split('<br>');
+                    let parts = aNode.innerHTML.split(/<br\s*\/?>/i);
                     let mainHtml = parts[0];
                     let subHtml = parts[1] || '';
 
@@ -185,7 +185,23 @@
         });
 
         function createCheckboxRow(key) {
-            const uniqueValues = Array.from(filters[key]).sort();
+            let uniqueValues = Array.from(filters[key]);
+
+            if (key === 'resolution') {
+                const resOrder = ['4k', '2160p', '1440p', '1080p', '1080i', '720p', '720i', '576p', '480p', 'sd'];
+                uniqueValues.sort((a, b) => {
+                    const aIndex = resOrder.indexOf(a.toLowerCase().trim());
+                    const bIndex = resOrder.indexOf(b.toLowerCase().trim());
+
+                    if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+                    if (aIndex !== -1) return -1;
+                    if (bIndex !== -1) return 1;
+                    return a.localeCompare(b);
+                });
+            } else {
+                uniqueValues.sort();
+            }
+
             if (uniqueValues.length === 0) return '';
 
             const checkboxes = uniqueValues.map(val => `
@@ -321,7 +337,11 @@
                     const visibleItems = group.items.filter(i => i.isVisible);
 
                     group.items.forEach(item => {
-                        item.mainRow.style.display = item.isVisible ? '' : 'none';
+                        if (item.isVisible) {
+                            item.mainRow.style.removeProperty('display');
+                        } else {
+                            item.mainRow.style.setProperty('display', 'none', 'important');
+                        }
                     });
 
                     if (visibleItems.length > 0) {
@@ -332,16 +352,20 @@
                         }
                         
                         group.groupCell.setAttribute('rowspan', visibleItems.length);
-                        group.groupCell.style.display = '';
+                        group.groupCell.style.removeProperty('display');
                     } else {
-                        group.groupCell.style.display = 'none';
+                        group.groupCell.style.setProperty('display', 'none', 'important');
                     }
                 });
             } else {
                 torrentData.forEach(item => {
-                    const displayValue = item.isVisible ? '' : 'none';
-                    item.mainRow.style.display = displayValue;
-                    item.linkedRows.forEach(r => r.style.display = displayValue);
+                    if (item.isVisible) {
+                        item.mainRow.style.removeProperty('display');
+                        item.linkedRows.forEach(r => r.style.removeProperty('display'));
+                    } else {
+                        item.mainRow.style.setProperty('display', 'none', 'important');
+                        item.linkedRows.forEach(r => r.style.setProperty('display', 'none', 'important'));
+                    }
                 });
             }
         };
