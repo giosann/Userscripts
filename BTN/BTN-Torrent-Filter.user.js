@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BTN Torrent Filter
 // @namespace    https://broadcasthe.net/
-// @version      3.0
+// @version      3.1
 // @description  Adds a collapsible grid of checkbox filters for series, season, and episode pages based on page content.
 // @author       You
 // @match        https://broadcasthe.net/series.php*
@@ -20,7 +20,7 @@
     if (!isSeriesPage && !isTorrentsPage) return;
 
     function buildFilters(hasHighlighter) {
-        console.log(`[BTN Filter v3.0] Initializing (Highlighter Mode: ${hasHighlighter})`);
+        console.log(`[BTN Filter v3.1] Initializing (Highlighter Mode: ${hasHighlighter})`);
 
         const filters = {
             resolution: new Set(),
@@ -56,7 +56,10 @@
             }
 
             let resolution = 'Unknown', source = 'Unknown', container = 'Unknown', codec = 'Unknown', hdr = 'SDR', group = 'Unknown';
-            const linkedText = item.linkedRows.map(r => r.textContent).join(' ');
+
+            // Only inspect the release title row on torrents.php; explicitly exclude pad/MediaInfo rows
+            const titleRow = item.linkedRows.find(r => !r.classList.contains('pad') && !r.id.startsWith('torrent_'));
+            const titleText = titleRow ? titleRow.textContent : '';
 
             if (hasHighlighter) {
                 const extract = (key) => {
@@ -84,14 +87,13 @@
                     source = 'Bluray Remux';
                 }
 
-                // Check all highlighter tags, row contents, and linked release rows
                 const hdrEls = Array.from(row.querySelectorAll('.torrent-field[data-hdr]'));
-                const hdrTags = hdrEls.map(el => el.getAttribute('data-hdr') || el.textContent).join(' ');
-                const fullText = `${row.textContent} ${linkedText} ${hdrTags}`;
+                const hdrAttrText = hdrEls.map(el => el.getAttribute('data-hdr') || el.textContent).join(' ');
+                const searchContext = `${row.textContent} ${titleText} ${hdrAttrText}`;
 
-                const hasDV = /\b(DV|Dolby Vision)\b/i.test(fullText);
-                const hasHDR = /\bHDR(10)?\b/i.test(fullText);
-                const hasHLG = /\bHLG\b/i.test(fullText);
+                const hasDV = /\b(DV|Dolby Vision)\b/i.test(searchContext);
+                const hasHDR = /\bHDR(10)?(\+|plus)?\b/i.test(searchContext);
+                const hasHLG = /\bHLG\b/i.test(searchContext);
 
                 if (hasDV && hasHDR) hdr = 'DV HDR';
                 else if (hasDV) hdr = 'DV';
@@ -133,12 +135,10 @@
                         source = 'Bluray Remux';
                     }
 
-                    // Check both the descriptor link and the linked release name row
-                    const fullText = `${subText} ${linkedText}`;
-
-                    const hasDV = /\b(DV|Dolby Vision)\b/i.test(fullText);
-                    const hasHDR = /\bHDR(10)?\b/i.test(fullText);
-                    const hasHLG = /\bHLG\b/i.test(fullText);
+                    const searchContext = `${subText} ${titleText}`;
+                    const hasDV = /\b(DV|Dolby Vision)\b/i.test(searchContext);
+                    const hasHDR = /\bHDR(10)?(\+|plus)?\b/i.test(searchContext);
+                    const hasHLG = /\bHLG\b/i.test(searchContext);
 
                     if (hasDV && hasHDR) hdr = 'DV HDR';
                     else if (hasDV) hdr = 'DV';
