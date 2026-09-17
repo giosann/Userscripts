@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BTN Torrent Filter
 // @namespace    https://broadcasthe.net/
-// @version      2.7
+// @version      2.8
 // @description  Adds a collapsible grid of checkbox filters for series, season, and episode pages based on page content.
 // @author       You
 // @match        https://broadcasthe.net/series.php*
@@ -15,11 +15,13 @@
 (function() {
     'use strict';
 
-    const isSeriesPage = window.location.pathname.includes('series.php');
-    const isTorrentsPage = window.location.pathname.includes('torrents.php');
+    const isSeriesPage = window.location.pathname.includes('series.php') || document.body.id === 'series';
+    const isTorrentsPage = window.location.pathname.includes('torrents.php') || document.body.id === 'torrents';
     if (!isSeriesPage && !isTorrentsPage) return;
 
     function buildFilters(hasHighlighter) {
+        console.log(`[BTN Filter v2.8] Initializing (Highlighter Mode: ${hasHighlighter})`);
+
         const filters = {
             resolution: new Set(),
             source: new Set(),
@@ -30,27 +32,13 @@
         };
 
         const torrentData = [];
-        const parsedGroups = [];
-        let currentGroup = null;
-
         const torrentRows = document.querySelectorAll('tr.group_torrent');
-        if (torrentRows.length === 0) return;
+        if (torrentRows.length === 0) {
+            console.warn('[BTN Filter] No torrent rows (tr.group_torrent) found on this page.');
+            return;
+        }
 
-        // Parse Torrents
         torrentRows.forEach(row => {
-            let groupCell = null;
-            
-            if (isSeriesPage) {
-                groupCell = row.querySelector('td.group');
-                if (groupCell) {
-                    currentGroup = {
-                        groupCell: groupCell,
-                        items: []
-                    };
-                    parsedGroups.push(currentGroup);
-                }
-            }
-
             const item = {
                 mainRow: row,
                 linkedRows: [],
@@ -72,7 +60,6 @@
             let resolution = 'Unknown', source = 'Unknown', container = 'Unknown', codec = 'Unknown', hdr = 'SDR', group = 'Unknown';
 
             if (hasHighlighter) {
-                // Parse using BTN Highlighter classes & attributes
                 const extract = (key) => {
                     const el = row.querySelector(`.torrent-field[data-${key}]`);
                     return el ? (el.getAttribute(`data-${key}`) || el.textContent).trim() : 'Unknown';
@@ -88,7 +75,6 @@
                     group = typeEl.getAttribute('data-custom') || typeEl.textContent.trim();
                 }
 
-                // Check for Remux distinction
                 const sourceEl = row.querySelector('.torrent-field[data-source]');
                 const customSource = sourceEl ? sourceEl.getAttribute('data-custom') : null;
                 const isRemux = (customSource === 'Remux') || 
@@ -99,7 +85,6 @@
                     source = 'Bluray Remux';
                 }
 
-                // Strict Boundary Check for Dynamic Range
                 const hdrEl = row.querySelector('.torrent-field[data-hdr]');
                 let hdrVal = hdrEl ? hdrEl.getAttribute('data-hdr') : null;
                 if (!hdrVal) {
@@ -119,20 +104,18 @@
                 hdr = hdrVal;
 
             } else {
-                // Fallback: Parse native site HTML via text extraction
-                let aNode;
-                if (isTorrentsPage) {
-                    aNode = Array.from(row.querySelectorAll('td > a')).find(a => a.textContent.includes('»') || (a.getAttribute('onclick') && a.getAttribute('onclick').includes('swapDisplay')));
-                } else if (isSeriesPage) {
-                    aNode = row.querySelector('a[href^="torrents.php"][href*="torrentid"]');
-                }
+                // Universal fallback link selector
+                let aNode = row.querySelector('a[href*="torrentid="]') || 
+                            Array.from(row.querySelectorAll('td > a')).find(a => 
+                                a.textContent.includes('»') || 
+                                (a.getAttribute('onclick') && a.getAttribute('onclick').includes('swapDisplay'))
+                            );
 
                 if (aNode) {
                     let parts = aNode.innerHTML.split(/<br\s*\/?>/i);
                     let mainHtml = parts[0];
                     let subHtml = parts[1] || '';
 
-                    // Main info line (Container / Codec / Source / Resolution / Group)
                     let tempDiv = document.createElement('div');
                     tempDiv.innerHTML = mainHtml;
                     let text = tempDiv.textContent.replace(/[»▶]/g, '').trim();
@@ -146,7 +129,6 @@
                         group = mainParts[4] || 'Unknown';
                     }
 
-                    // Secondary info line (<abbr> tags containing Remux, DV, HDR, HLG)
                     let tempSub = document.createElement('div');
                     tempSub.innerHTML = subHtml;
                     let subText = tempSub.textContent;
@@ -177,12 +159,10 @@
             filters.hdr.add(hdr);
             filters.group.add(group);
 
-            if (isSeriesPage && currentGroup) {
-                currentGroup.items.push(item);
-            }
-
             torrentData.push(item);
         });
+
+        console.log(`[BTN Filter] Parsed ${torrentData.length} torrents across the page.`);
 
         function createCheckboxRow(key) {
             let uniqueValues = Array.from(filters[key]);
@@ -192,7 +172,6 @@
                 uniqueValues.sort((a, b) => {
                     const aIndex = resOrder.indexOf(a.toLowerCase().trim());
                     const bIndex = resOrder.indexOf(b.toLowerCase().trim());
-
                     if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
                     if (aIndex !== -1) return -1;
                     if (bIndex !== -1) return 1;
@@ -240,16 +219,11 @@
             </div>
         `;
 
-        const tableElements = document.querySelectorAll('.torrent_table');
-        let targetTable = null;
-        tableElements.forEach(t => {
-            if (t.style.display !== 'none' && !targetTable) {
-                targetTable = t;
-            }
-        });
+        const visibleTables = Array.from(document.querySelectorAll('.torrent_table')).filter(t => t.style.display !== 'none');
+        const firstTable = visibleTables[0];
 
-        if (targetTable && targetTable.parentElement) {
-            targetTable.parentElement.insertBefore(filterBox, targetTable);
+        if (firstTable && firstTable.parentElement) {
+            firstTable.parentElement.insertBefore(filterBox, firstTable);
         } else {
             const mainColumn = document.querySelector('.main_column');
             if (mainColumn) mainColumn.insertBefore(filterBox, mainColumn.firstChild);
@@ -261,7 +235,6 @@
 
         header.addEventListener('click', (e) => {
             if (e.target.id === 'btn-toggle-all') return;
-            
             const isHidden = body.style.display === 'none';
             body.style.display = isHidden ? 'block' : 'none';
             headerText.innerText = isHidden ? '▼ Filter' : '▶ Filter';
@@ -305,6 +278,8 @@
             const categories = Object.keys(selected);
             const totalCats = categories.length;
 
+            // 1. Determine visibility for all rows
+            let visibleCount = 0;
             torrentData.forEach(item => {
                 const passesCat = {};
                 let totalPasses = 0;
@@ -319,6 +294,7 @@
                 }
 
                 item.isVisible = (totalPasses === totalCats);
+                if (item.isVisible) visibleCount++;
 
                 for (const cat of categories) {
                     if (totalPasses === totalCats || (totalPasses === totalCats - 1 && !passesCat[cat])) {
@@ -327,46 +303,73 @@
                 }
             });
 
+            console.log(`[BTN Filter] Active filter applied: ${visibleCount} / ${torrentData.length} visible.`);
+
+            // 2. Gray out redundant checkboxes
             checkboxes.forEach(cb => {
                 const isRelevant = availableOptions[cb.dataset.key].has(cb.value);
                 cb.parentElement.style.opacity = isRelevant ? '1' : '0.35';
             });
 
-            if (isSeriesPage && targetTable) {
-                parsedGroups.forEach(group => {
-                    const visibleItems = group.items.filter(i => i.isVisible);
+            // 3. UNCONDITIONAL ROW HIDING: runs for all rows on all pages
+            torrentData.forEach(item => {
+                if (item.isVisible) {
+                    item.mainRow.style.removeProperty('display');
+                    item.linkedRows.forEach(r => r.style.removeProperty('display'));
+                } else {
+                    item.mainRow.style.setProperty('display', 'none', 'important');
+                    item.linkedRows.forEach(r => r.style.setProperty('display', 'none', 'important'));
+                }
+            });
 
-                    group.items.forEach(item => {
-                        if (item.isVisible) {
-                            item.mainRow.style.removeProperty('display');
-                        } else {
-                            item.mainRow.style.setProperty('display', 'none', 'important');
-                        }
+            // 4. SERIES PAGE LAYOUT RECALIBRATION: isolated per table
+            if (isSeriesPage) {
+                try {
+                    const tables = document.querySelectorAll('.torrent_table');
+                    tables.forEach(table => {
+                        if (table.style.display === 'none') return;
+
+                        const tbodies = table.querySelectorAll('tbody');
+                        tbodies.forEach(tbody => {
+                            const rows = Array.from(tbody.querySelectorAll('tr.group_torrent'));
+                            if (rows.length === 0) return;
+
+                            // Group contiguous rows under their corresponding group cell
+                            let currentGroupCell = null;
+                            let currentGroupRows = [];
+
+                            const processGroup = (cell, gRows) => {
+                                if (!cell) return;
+                                const visible = gRows.filter(r => r.style.display !== 'none');
+                                if (visible.length === 0) {
+                                    cell.style.setProperty('display', 'none', 'important');
+                                } else {
+                                    cell.style.removeProperty('display');
+                                    cell.setAttribute('rowspan', visible.length);
+                                    const firstVis = visible[0];
+                                    if (firstVis.firstElementChild !== cell) {
+                                        firstVis.insertBefore(cell, firstVis.firstElementChild);
+                                    }
+                                }
+                            };
+
+                            rows.forEach(r => {
+                                const gCell = r.querySelector('td.group');
+                                if (gCell) {
+                                    processGroup(currentGroupCell, currentGroupRows);
+                                    currentGroupCell = gCell;
+                                    currentGroupRows = [r];
+                                } else if (currentGroupCell) {
+                                    currentGroupRows.push(r);
+                                }
+                            });
+
+                            processGroup(currentGroupCell, currentGroupRows);
+                        });
                     });
-
-                    if (visibleItems.length > 0) {
-                        const firstVisibleRow = visibleItems[0].mainRow;
-                        
-                        if (firstVisibleRow.firstElementChild !== group.groupCell) {
-                            firstVisibleRow.insertBefore(group.groupCell, firstVisibleRow.firstElementChild);
-                        }
-                        
-                        group.groupCell.setAttribute('rowspan', visibleItems.length);
-                        group.groupCell.style.removeProperty('display');
-                    } else {
-                        group.groupCell.style.setProperty('display', 'none', 'important');
-                    }
-                });
-            } else {
-                torrentData.forEach(item => {
-                    if (item.isVisible) {
-                        item.mainRow.style.removeProperty('display');
-                        item.linkedRows.forEach(r => r.style.removeProperty('display'));
-                    } else {
-                        item.mainRow.style.setProperty('display', 'none', 'important');
-                        item.linkedRows.forEach(r => r.style.setProperty('display', 'none', 'important'));
-                    }
-                });
+                } catch (err) {
+                    console.error('[BTN Filter] Error during layout recalibration:', err);
+                }
             }
         };
 
