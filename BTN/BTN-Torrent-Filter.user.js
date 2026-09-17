@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BTN Torrent Filter
 // @namespace    https://broadcasthe.net/
-// @version      2.9
+// @version      3.0
 // @description  Adds a collapsible grid of checkbox filters for series, season, and episode pages based on page content.
 // @author       You
 // @match        https://broadcasthe.net/series.php*
@@ -20,7 +20,7 @@
     if (!isSeriesPage && !isTorrentsPage) return;
 
     function buildFilters(hasHighlighter) {
-        console.log(`[BTN Filter v2.9] Initializing (Highlighter Mode: ${hasHighlighter})`);
+        console.log(`[BTN Filter v3.0] Initializing (Highlighter Mode: ${hasHighlighter})`);
 
         const filters = {
             resolution: new Set(),
@@ -56,6 +56,7 @@
             }
 
             let resolution = 'Unknown', source = 'Unknown', container = 'Unknown', codec = 'Unknown', hdr = 'SDR', group = 'Unknown';
+            const linkedText = item.linkedRows.map(r => r.textContent).join(' ');
 
             if (hasHighlighter) {
                 const extract = (key) => {
@@ -83,23 +84,20 @@
                     source = 'Bluray Remux';
                 }
 
-                const hdrEl = row.querySelector('.torrent-field[data-hdr]');
-                let hdrVal = hdrEl ? hdrEl.getAttribute('data-hdr') : null;
-                if (!hdrVal) {
-                    const hasDV = /\b(DV|Dolby Vision)\b/i.test(row.textContent);
-                    const hasHDR = /\bHDR(10)?\b/i.test(row.textContent);
-                    const hasHLG = /\bHLG\b/i.test(row.textContent);
-                    
-                    if (hasDV && hasHDR) hdrVal = 'DV HDR';
-                    else if (hasDV) hdrVal = 'DV';
-                    else if (hasHDR) hdrVal = 'HDR';
-                    else if (hasHLG) hdrVal = 'HLG';
-                    else hdrVal = 'SDR';
-                } else {
-                    if (hdrVal.includes('DV') && hdrVal.includes('HDR')) hdrVal = 'DV HDR';
-                    else if (hdrVal.startsWith('DV')) hdrVal = 'DV';
-                }
-                hdr = hdrVal;
+                // Check all highlighter tags, row contents, and linked release rows
+                const hdrEls = Array.from(row.querySelectorAll('.torrent-field[data-hdr]'));
+                const hdrTags = hdrEls.map(el => el.getAttribute('data-hdr') || el.textContent).join(' ');
+                const fullText = `${row.textContent} ${linkedText} ${hdrTags}`;
+
+                const hasDV = /\b(DV|Dolby Vision)\b/i.test(fullText);
+                const hasHDR = /\bHDR(10)?\b/i.test(fullText);
+                const hasHLG = /\bHLG\b/i.test(fullText);
+
+                if (hasDV && hasHDR) hdr = 'DV HDR';
+                else if (hasDV) hdr = 'DV';
+                else if (hasHDR) hdr = 'HDR';
+                else if (hasHLG) hdr = 'HLG';
+                else hdr = 'SDR';
 
             } else {
                 let aNode = row.querySelector('a[href*="torrentid="]') || 
@@ -135,9 +133,12 @@
                         source = 'Bluray Remux';
                     }
 
-                    const hasDV = /\b(DV|Dolby Vision)\b/i.test(subText);
-                    const hasHDR = /\bHDR(10)?\b/i.test(subText);
-                    const hasHLG = /\bHLG\b/i.test(subText);
+                    // Check both the descriptor link and the linked release name row
+                    const fullText = `${subText} ${linkedText}`;
+
+                    const hasDV = /\b(DV|Dolby Vision)\b/i.test(fullText);
+                    const hasHDR = /\bHDR(10)?\b/i.test(fullText);
+                    const hasHLG = /\bHLG\b/i.test(fullText);
 
                     if (hasDV && hasHDR) hdr = 'DV HDR';
                     else if (hasDV) hdr = 'DV';
@@ -344,7 +345,6 @@
             // 4. Series page recalibration
             if (isSeriesPage) {
                 seriesGroups.forEach(group => {
-                    // Walk backwards through group rows to hide section headers that have 0 visible torrents
                     let hasVisibleTorrentsBelow = false;
                     for (let i = group.rows.length - 1; i >= 0; i--) {
                         const row = group.rows[i];
@@ -362,7 +362,6 @@
                         }
                     }
 
-                    // Collect all rows in this group that remain visible
                     const visibleRows = group.rows.filter(r => r.style.display !== 'none');
 
                     if (visibleRows.length === 0) {
@@ -370,12 +369,10 @@
                     } else {
                         const firstRow = visibleRows[0];
                         
-                        // Ensure group cell sits at the start of the first visible row
                         if (group.groupCell.parentElement !== firstRow || firstRow.firstElementChild !== group.groupCell) {
                             firstRow.insertBefore(group.groupCell, firstRow.firstElementChild);
                         }
 
-                        // Maintain 22% width so Column 1 does not compress
                         group.groupCell.style.width = '22%';
                         group.groupCell.style.removeProperty('display');
                         group.groupCell.setAttribute('rowspan', visibleRows.length);
